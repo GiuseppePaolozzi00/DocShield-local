@@ -166,7 +166,7 @@
                 <input
                   id="watermarkText"
                   type="text"
-                  value="COPIA AD USO ESCLUSIVO REGISTRAZIONE"
+                  value="PRIVACY"
                   class="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 outline-none ring-0 transition placeholder:text-slate-500 focus:border-blue-500"
                   placeholder="Inserisci il testo"
                 />
@@ -272,7 +272,7 @@
           documents: [],
           selectedId: null,
           watermark: {
-            text: "COPIA AD USO ESCLUSIVO REGISTRAZIONE",
+            text: "PRIVACY",
             opacity: 65,
             fontSize: 68,
             rotation: -38,
@@ -371,7 +371,7 @@
         }
 
         function applyWatermarkToContext(ctx, width, height, watermarkOptions) {
-          const text = (watermarkOptions.text || "").trim() || "COPIA AD USO ESCLUSIVO REGISTRAZIONE";
+          const text = (watermarkOptions.text || "").trim() || "PRIVACY";
           const alpha = Math.max(0.1, Math.min(1, Number(watermarkOptions.opacity) / 100));
           const fontSize = Math.max(18, Number(watermarkOptions.fontSize));
           const rotation = Number(watermarkOptions.rotation || 0);
@@ -533,6 +533,19 @@
           link.click();
         }
 
+        function addCanvasToPdf(pdf, canvas) {
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const ratio = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+          const drawWidth = canvas.width * ratio;
+          const drawHeight = canvas.height * ratio;
+          const x = (pageWidth - drawWidth) / 2;
+          const y = (pageHeight - drawHeight) / 2;
+          const imageData = canvas.toDataURL("image/jpeg", 0.92);
+
+          pdf.addImage(imageData, "JPEG", x, y, drawWidth, drawHeight, undefined, "FAST");
+        }
+
         function exportSinglePdf() {
           const doc = getSelectedDocument();
           if (!doc) return;
@@ -541,12 +554,11 @@
           const { jsPDF } = window.jspdf;
           const pdf = new jsPDF({
             orientation: canvas.width > canvas.height ? "landscape" : "portrait",
-            unit: "px",
-            format: [canvas.width, canvas.height],
+            unit: "pt",
+            format: "a4",
           });
 
-          const imageData = canvas.toDataURL("image/jpeg", 0.92);
-          pdf.addImage(imageData, "JPEG", 0, 0, canvas.width, canvas.height);
+          addCanvasToPdf(pdf, canvas);
           pdf.save(`${slugify(doc.file.name.replace(/\.[^/.]+$/, ""))}_protected.pdf`);
         }
 
@@ -554,17 +566,21 @@
           if (!state.documents.length) return;
 
           const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF({ unit: "px" });
+          const pdf = new jsPDF({
+            orientation: "portrait",
+            unit: "pt",
+            format: "a4",
+          });
 
           state.documents.forEach((doc, index) => {
             const canvas = buildWatermarkedCanvasFromImage(doc.image);
-            const imageData = canvas.toDataURL("image/jpeg", 0.92);
 
-            const width = canvas.width;
-            const height = canvas.height;
+            if (index > 0) {
+              const nextOrientation = canvas.width > canvas.height ? "landscape" : "portrait";
+              pdf.addPage("a4", nextOrientation);
+            }
 
-            if (index > 0) pdf.addPage([width, height], width > height ? "landscape" : "portrait");
-            pdf.addImage(imageData, "JPEG", 0, 0, width, height);
+            addCanvasToPdf(pdf, canvas);
           });
 
           const fileName = state.documents.length > 1 ? "documenti_protetti" : slugify(state.documents[0].file.name.replace(/\.[^/.]+$/, ""));
