@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DocShield Local</title>
+    <meta
+      name="description"
+      content="DocShield Local: privacy-first document watermarking and PDF export entirely client-side."
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            boxShadow: {
+              glow: "0 0 0 1px rgba(255,255,255,0.06), 0 20px 60px rgba(15,23,42,0.55)",
+            },
+          },
+        },
+      };
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 20%),
+          radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 25%),
+          #050816;
+      }
+
+      .glass {
+        background: rgba(15, 23, 42, 0.72);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+
+      .drop-zone {
+        border: 1.5px dashed rgba(148, 163, 184, 0.45);
+        transition: all 0.2s ease;
+      }
+
+      .drop-zone.dragover {
+        border-color: rgba(37, 99, 235, 1);
+        background: rgba(30, 41, 59, 0.8);
+        transform: translateY(-1px);
+      }
+
+      .thumbnail {
+        transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .thumbnail:hover {
+        transform: translateY(-1px);
+      }
+
+      .thumbnail.selected {
+        border-color: rgba(96, 165, 250, 1);
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.7);
+      }
+
+      .range {
+        accent-color: #3b82f6;
+      }
+
+      .swatch.active {
+        outline: 2px solid rgba(255, 255, 255, 0.9);
+        outline-offset: 2px;
+      }
+
+      canvas {
+        display: block;
+        max-width: 100%;
+        max-height: 72vh;
+        margin: 0 auto;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.78));
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+      }
+
+      .custom-scroll::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .custom-scroll::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.45);
+      }
+
+      .custom-scroll::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.55);
+        border-radius: 999px;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-slate-50 antialiased">
+    <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+      <header class="glass mb-6 rounded-2xl border border-slate-700/80 px-4 py-3 shadow-glow">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/30">
+              <i data-lucide="shield-check" class="h-5 w-5"></i>
+            </div>
+            <div>
+              <p class="text-lg font-semibold tracking-tight">DocShield Local</p>
+              <p class="text-xs text-slate-400">Privacy-first document protection</p>
+            </div>
+          </div>
+
+          <div class="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300">
+            <span>🔒</span>
+            <span>100% Client-Side Privacy: Nessun dato lascia il tuo browser</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside class="space-y-6">
+          <section class="glass rounded-2xl border border-slate-700/80 p-4 shadow-glow">
+            <div class="mb-4 flex items-center justify-between">
+              <div>
+                <h2 class="text-lg font-semibold">Documenti</h2>
+                <p id="fileCounter" class="text-xs text-slate-400">0 documenti</p>
+              </div>
+
+              <button
+                id="clearAllBtn"
+                type="button"
+                class="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled
+              >
+                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                Pulisci tutti i file
+              </button>
+            </div>
+
+            <label
+              id="dropZone"
+              for="fileInput"
+              class="drop-zone flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-slate-900/40 px-5 py-8 text-center transition hover:border-blue-400/70 hover:bg-slate-900/60"
+            >
+              <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300 ring-1 ring-blue-400/25">
+                <i data-lucide="upload-cloud" class="h-6 w-6"></i>
+              </div>
+              <p class="text-sm font-medium text-slate-100">Trascina immagini qui</p>
+              <p class="mt-1 text-xs text-slate-400">JPG, PNG, WebP • multipli</p>
+              <span class="mt-4 inline-flex rounded-full bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-200 ring-1 ring-blue-400/30">
+                Seleziona file
+              </span>
+            </label>
+            <input id="fileInput" class="hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" />
+
+            <div id="thumbnailList" class="custom-scroll mt-4 grid max-h-[360px] grid-cols-2 gap-3 overflow-auto pr-1 sm:grid-cols-3 xl:grid-cols-2"></div>
+          </section>
+
+          <section class="glass rounded-2xl border border-slate-700/80 p-4 shadow-glow">
+            <h3 class="mb-4 text-lg font-semibold">Watermark</h3>
+
+            <div class="space-y-4">
+              <div>
+                <label for="watermarkText" class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Testo</label>
+                <input
+                  id="watermarkText"
+                  type="text"
+                  value="COPIA AD USO ESCLUSIVO REGISTRAZIONE"
+                  class="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 outline-none ring-0 transition placeholder:text-slate-500 focus:border-blue-500"
+                  placeholder="Inserisci il testo"
+                />
+              </div>
+
+              <div>
+                <div class="mb-2 flex items-center justify-between text-xs text-slate-400">
+                  <label for="opacityRange">Opacità</label>
+                  <span id="opacityValue" class="rounded-md bg-slate-800 px-2 py-0.5 text-slate-200">65%</span>
+                </div>
+                <input id="opacityRange" class="range w-full" type="range" min="10" max="100" value="65" />
+              </div>
+
+              <div>
+                <div class="mb-2 flex items-center justify-between text-xs text-slate-400">
+                  <label for="fontSizeRange">Dimensione font</label>
+                  <span id="fontSizeValue" class="rounded-md bg-slate-800 px-2 py-0.5 text-slate-200">68px</span>
+                </div>
+                <input id="fontSizeRange" class="range w-full" type="range" min="18" max="180" value="68" />
+              </div>
+
+              <div>
+                <div class="mb-2 flex items-center justify-between text-xs text-slate-400">
+                  <label for="rotationRange">Rotazione</label>
+                  <span id="rotationValue" class="rounded-md bg-slate-800 px-2 py-0.5 text-slate-200">-38°</span>
+                </div>
+                <input id="rotationRange" class="range w-full" type="range" min="-90" max="90" value="-38" />
+              </div>
+
+              <div>
+                <label class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Colore</label>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="swatch active h-9 w-9 rounded-full border border-slate-600 bg-slate-900 shadow-inner" data-color="#111827" style="background:#111827" aria-label="Nero"></button>
+                  <button type="button" class="swatch h-9 w-9 rounded-full border border-slate-600 bg-slate-900 shadow-inner" data-color="#ffffff" style="background:#ffffff" aria-label="Bianco"></button>
+                  <button type="button" class="swatch h-9 w-9 rounded-full border border-slate-600 bg-slate-900 shadow-inner" data-color="#ef4444" style="background:#ef4444" aria-label="Rosso"></button>
+                  <button type="button" class="swatch h-9 w-9 rounded-full border border-slate-600 bg-slate-900 shadow-inner" data-color="#2563eb" style="background:#2563eb" aria-label="Blu"></button>
+                </div>
+              </div>
+
+              <label class="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
+                <input id="repeatToggle" type="checkbox" checked class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500" />
+                <span>Ripeti su tutto il documento</span>
+              </label>
+            </div>
+          </section>
+        </aside>
+
+        <section class="glass rounded-2xl border border-slate-700/80 p-4 shadow-glow">
+          <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 class="text-xl font-semibold">Anteprima documento protetto</h2>
+              <p id="selectionInfo" class="text-sm text-slate-400">Nessun documento selezionato</p>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <button id="downloadJpgBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400">
+                <i data-lucide="download" class="h-4 w-4"></i>
+                Scarica Immagine Protetta (JPG)
+              </button>
+              <button id="downloadSinglePdfBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-400">
+                <i data-lucide="file-text" class="h-4 w-4"></i>
+                Esporta Singolo PDF
+              </button>
+              <button id="downloadAllPdfBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:bg-violet-400">
+                <i data-lucide="files" class="h-4 w-4"></i>
+                Scarica Tutti come PDF Unico
+              </button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-700 bg-slate-950/50 p-3">
+            <canvas id="previewCanvas" width="1200" height="1600" aria-label="Anteprima documento con watermark"></canvas>
+          </div>
+        </section>
+      </main>
+
+      <footer class="mt-6 flex flex-col items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/40 px-4 py-3 text-sm text-slate-400 sm:flex-row">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500">DocShield Local</span>
+          <span class="inline-flex items-center rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-300">
+            Versione Pro
+          </span>
+        </div>
+
+        <a
+          href="https://buymeacoffee.com/giuseppepaolozzi"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 font-medium text-amber-200 transition hover:bg-amber-500/15"
+        >
+          <i data-lucide="coffee" class="h-4 w-4"></i>
+          Offrimi un caffè
+        </a>
+      </footer>
+    </div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        // ===== State =====
+        const state = {
+          documents: [],
+          selectedId: null,
+          watermark: {
+            text: "COPIA AD USO ESCLUSIVO REGISTRAZIONE",
+            opacity: 65,
+            fontSize: 68,
+            rotation: -38,
+            color: "#111827",
+            repeat: true,
+          },
+        };
+
+        // ===== DOM refs =====
+        const fileInput = document.getElementById("fileInput");
+        const dropZone = document.getElementById("dropZone");
+        const thumbnailList = document.getElementById("thumbnailList");
+        const previewCanvas = document.getElementById("previewCanvas");
+        const clearAllBtn = document.getElementById("clearAllBtn");
+        const fileCounter = document.getElementById("fileCounter");
+        const selectionInfo = document.getElementById("selectionInfo");
+
+        const watermarkText = document.getElementById("watermarkText");
+        const opacityRange = document.getElementById("opacityRange");
+        const fontSizeRange = document.getElementById("fontSizeRange");
+        const rotationRange = document.getElementById("rotationRange");
+        const opacityValue = document.getElementById("opacityValue");
+        const fontSizeValue = document.getElementById("fontSizeValue");
+        const rotationValue = document.getElementById("rotationValue");
+        const repeatToggle = document.getElementById("repeatToggle");
+
+        const downloadJpgBtn = document.getElementById("downloadJpgBtn");
+        const downloadSinglePdfBtn = document.getElementById("downloadSinglePdfBtn");
+        const downloadAllPdfBtn = document.getElementById("downloadAllPdfBtn");
+
+        // ===== Utility =====
+        function readFileAsDataUrl(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Impossibile leggere il file."));
+            reader.readAsDataURL(file);
+          });
+        }
+
+        function loadImage(dataUrl) {
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error("Impossibile caricare l'immagine."));
+            img.src = dataUrl;
+          });
+        }
+
+        function slugify(value) {
+          return String(value)
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9-_]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .toLowerCase();
+        }
+
+        function hexToRgba(hex, alpha) {
+          const color = hex.replace("#", "");
+          const full = color.length === 3 ? color.split("").map((part) => part + part).join("") : color;
+          const int = Number.parseInt(full, 16);
+          const r = (int >> 16) & 255;
+          const g = (int >> 8) & 255;
+          const b = int & 255;
+          return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        function getSelectedDocument() {
+          if (!state.documents.length) return null;
+          if (!state.selectedId) {
+            state.selectedId = state.documents[0].id;
+          }
+          return state.documents.find((doc) => doc.id === state.selectedId) || state.documents[0];
+        }
+
+        function updateWatermarkLabels() {
+          opacityValue.textContent = `${state.watermark.opacity}%`;
+          fontSizeValue.textContent = `${state.watermark.fontSize}px`;
+          rotationValue.textContent = `${state.watermark.rotation}°`;
+        }
+
+        function syncControlsFromState() {
+          watermarkText.value = state.watermark.text;
+          opacityRange.value = String(state.watermark.opacity);
+          fontSizeRange.value = String(state.watermark.fontSize);
+          rotationRange.value = String(state.watermark.rotation);
+          repeatToggle.checked = state.watermark.repeat;
+
+          document.querySelectorAll(".swatch").forEach((button) => {
+            const isActive = button.dataset.color.toLowerCase() === state.watermark.color.toLowerCase();
+            button.classList.toggle("active", isActive);
+          });
+
+          updateWatermarkLabels();
+        }
+
+        function applyWatermarkToContext(ctx, width, height, watermarkOptions) {
+          const text = (watermarkOptions.text || "").trim() || "COPIA AD USO ESCLUSIVO REGISTRAZIONE";
+          const alpha = Math.max(0.1, Math.min(1, Number(watermarkOptions.opacity) / 100));
+          const fontSize = Math.max(18, Number(watermarkOptions.fontSize));
+          const rotation = Number(watermarkOptions.rotation || 0);
+
+          ctx.save();
+          ctx.font = `700 ${fontSize}px Arial`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = hexToRgba(watermarkOptions.color || "#111827", alpha);
+
+          if (watermarkOptions.repeat) {
+            const step = Math.max(fontSize * 2.2, 180);
+            const halfWidth = width * 1.4;
+            const halfHeight = height * 1.4;
+            ctx.translate(width / 2, height / 2);
+            ctx.rotate((rotation * Math.PI) / 180);
+
+            for (let x = -halfWidth; x <= halfWidth; x += step) {
+              for (let y = -halfHeight; y <= halfHeight; y += step) {
+                ctx.fillText(text, x, y);
+              }
+            }
+          } else {
+            ctx.translate(width / 2, height / 2);
+            ctx.rotate((rotation * Math.PI) / 180);
+            ctx.fillText(text, 0, 0);
+          }
+
+          ctx.restore();
+        }
+
+        function buildWatermarkedCanvasFromImage(image) {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const ctx = canvas.getContext("2d");
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          applyWatermarkToContext(ctx, canvas.width, canvas.height, state.watermark);
+
+          return canvas;
+        }
+
+        function renderCanvasPreview() {
+          const doc = getSelectedDocument();
+          const ctx = previewCanvas.getContext("2d");
+
+          if (!doc) {
+            previewCanvas.width = 1200;
+            previewCanvas.height = 1600;
+            ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            ctx.fillStyle = "#0f172a";
+            ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+            ctx.fillStyle = "#e2e8f0";
+            ctx.font = "600 40px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("Nessun documento caricato", previewCanvas.width / 2, previewCanvas.height / 2);
+            selectionInfo.textContent = "Nessun documento selezionato";
+            return;
+          }
+
+          const image = doc.image;
+          previewCanvas.width = image.width;
+          previewCanvas.height = image.height;
+          ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+          ctx.drawImage(image, 0, 0, previewCanvas.width, previewCanvas.height);
+          applyWatermarkToContext(ctx, previewCanvas.width, previewCanvas.height, state.watermark);
+
+          selectionInfo.textContent = `${doc.file.name} • ${image.width} × ${image.height}px`;
+        }
+
+        function renderThumbnails() {
+          if (!state.documents.length) {
+            thumbnailList.innerHTML = "";
+            fileCounter.textContent = "0 documenti";
+            clearAllBtn.disabled = true;
+            return;
+          }
+
+          thumbnailList.innerHTML = state.documents
+            .map((doc) => {
+              const selected = doc.id === state.selectedId ? "selected" : "";
+              return `
+                <button
+                  type="button"
+                  class="thumbnail group relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-900/60 p-1 text-left ${selected}"
+                  data-doc-id="${doc.id}"
+                  title="${doc.file.name}"
+                >
+                  <div class="relative overflow-hidden rounded-lg bg-slate-800">
+                    <img src="${doc.dataUrl}" alt="${doc.file.name}" class="h-28 w-full object-cover" />
+                    <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 to-transparent px-2 py-1.5">
+                      <p class="truncate text-[10px] font-medium text-slate-100">${doc.file.name}</p>
+                    </div>
+                  </div>
+                </button>
+              `;
+            })
+            .join("");
+
+          thumbnailList.querySelectorAll(".thumbnail").forEach((button) => {
+            button.addEventListener("click", () => {
+              state.selectedId = button.dataset.docId;
+              renderThumbnails();
+              renderCanvasPreview();
+            });
+          });
+
+          fileCounter.textContent = `${state.documents.length} documento${state.documents.length > 1 ? "i" : ""}`;
+          clearAllBtn.disabled = false;
+        }
+
+        async function addFiles(fileList) {
+          const incoming = Array.from(fileList || []).filter((file) => {
+            if (!file || !file.type.startsWith("image/")) return false;
+            const name = file.name.toLowerCase();
+            return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp");
+          });
+
+          if (!incoming.length) return;
+
+          for (const file of incoming) {
+            const dataUrl = await readFileAsDataUrl(file);
+            const image = await loadImage(dataUrl);
+
+            state.documents.push({
+              id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              file,
+              dataUrl,
+              image,
+            });
+          }
+
+          state.selectedId = state.documents[state.documents.length - 1].id;
+          renderThumbnails();
+          renderCanvasPreview();
+          fileInput.value = "";
+        }
+
+        function resetAll() {
+          state.documents = [];
+          state.selectedId = null;
+          fileInput.value = "";
+          renderThumbnails();
+          renderCanvasPreview();
+        }
+
+        function downloadCurrentImage() {
+          const doc = getSelectedDocument();
+          if (!doc) return;
+
+          const canvas = buildWatermarkedCanvasFromImage(doc.image);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = `${slugify(doc.file.name.replace(/\.[^/.]+$/, ""))}_protected.jpg`;
+          link.click();
+        }
+
+        function exportSinglePdf() {
+          const doc = getSelectedDocument();
+          if (!doc) return;
+
+          const canvas = buildWatermarkedCanvasFromImage(doc.image);
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+            orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+            unit: "px",
+            format: [canvas.width, canvas.height],
+          });
+
+          const imageData = canvas.toDataURL("image/jpeg", 0.92);
+          pdf.addImage(imageData, "JPEG", 0, 0, canvas.width, canvas.height);
+          pdf.save(`${slugify(doc.file.name.replace(/\.[^/.]+$/, ""))}_protected.pdf`);
+        }
+
+        function exportAllPdf() {
+          if (!state.documents.length) return;
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({ unit: "px" });
+
+          state.documents.forEach((doc, index) => {
+            const canvas = buildWatermarkedCanvasFromImage(doc.image);
+            const imageData = canvas.toDataURL("image/jpeg", 0.92);
+
+            const width = canvas.width;
+            const height = canvas.height;
+
+            if (index > 0) pdf.addPage([width, height], width > height ? "landscape" : "portrait");
+            pdf.addImage(imageData, "JPEG", 0, 0, width, height);
+          });
+
+          const fileName = state.documents.length > 1 ? "documenti_protetti" : slugify(state.documents[0].file.name.replace(/\.[^/.]+$/, ""));
+          pdf.save(`${fileName}_bundle.pdf`);
+        }
+
+        // ===== Event wiring =====
+        fileInput.addEventListener("change", (event) => addFiles(event.target.files));
+
+        ["dragenter", "dragover"].forEach((eventName) => {
+          dropZone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropZone.classList.add("dragover");
+          });
+        });
+
+        ["dragleave", "dragend", "drop"].forEach((eventName) => {
+          dropZone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropZone.classList.remove("dragover");
+          });
+        });
+
+        dropZone.addEventListener("drop", (event) => {
+          const files = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : [];
+          addFiles(files);
+        });
+
+        clearAllBtn.addEventListener("click", resetAll);
+
+        watermarkText.addEventListener("input", (event) => {
+          state.watermark.text = event.target.value;
+          renderCanvasPreview();
+        });
+
+        opacityRange.addEventListener("input", (event) => {
+          state.watermark.opacity = Number(event.target.value);
+          updateWatermarkLabels();
+          renderCanvasPreview();
+        });
+
+        fontSizeRange.addEventListener("input", (event) => {
+          state.watermark.fontSize = Number(event.target.value);
+          updateWatermarkLabels();
+          renderCanvasPreview();
+        });
+
+        rotationRange.addEventListener("input", (event) => {
+          state.watermark.rotation = Number(event.target.value);
+          updateWatermarkLabels();
+          renderCanvasPreview();
+        });
+
+        repeatToggle.addEventListener("change", (event) => {
+          state.watermark.repeat = event.target.checked;
+          renderCanvasPreview();
+        });
+
+        document.querySelectorAll(".swatch").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.watermark.color = button.dataset.color;
+            syncControlsFromState();
+            renderCanvasPreview();
+          });
+        });
+
+        downloadJpgBtn.addEventListener("click", downloadCurrentImage);
+        downloadSinglePdfBtn.addEventListener("click", exportSinglePdf);
+        downloadAllPdfBtn.addEventListener("click", exportAllPdf);
+
+        // ===== Init =====
+        syncControlsFromState();
+        renderThumbnails();
+        renderCanvasPreview();
+        lucide.createIcons();
+      })();
+    </script>
+  </body>
+</html>
